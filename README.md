@@ -10,7 +10,7 @@ docker-compose up -d
 ```
 Run consumers
 ```
-dotnet run -p ./src/Example.Consumers
+dotnet run -p ./src/Example.Consumer
 ```
 Run producer
 ```
@@ -20,29 +20,28 @@ dotnet run -p ./src/Example.Producer
 ## Steps
 
 ### Initial state
-![scheme map](docs/images/0_initial.png)
+dotnet run -p ./src/Example.Producer --initial
+Producer 0 started.
+![scheme map](docs/images_2/0_initial.png)
 
 ### First step
-Add temporary exchange and queues for consume temporary event.
-![scheme map](docs/images/1_first.png)
+dotnet run -p ./src/Example.Producer
+Add temporary exchange and bindings.
+Producer 1 started. Producer 0 worked for a while then stopped.
+It imitates rolling update.
+![scheme map](docs/images_2/1_first.png)
 
-### Second step
-Begin publish temporary event to temporary exchange. Stop publish original event.
-Here we can easily rollback changes.
-![scheme map](docs/images/2_second.png)
+### Second step 1st part
+Producer 0 should be stopped at this time!
+dotnet run -p ./src/Example.Producer --second
+Delete original exchange
+![scheme map](docs/images_2/2_1_second.png)
+
+### Second step 2nd part
+Recreate exchange with original name and topic scheme
+![scheme map](docs/images_2/2_1_second.png)
 
 ### Third step
-Remove original exchanges and queues.
-![scheme map](docs/images/3_third.png)
-
-### Four step
-Add original exchange as topic and original queues.
-![scheme map](docs/images/4_four.png)
-
-### Fifth step
-Begin publish to new original exchange.
-![scheme map](docs/images/5_fifth.png)
-
-### Six step
-Remove all tmp items.
-![scheme map](docs/images/6_six.png)
+Here we can stop Producer 1.
+Manual (or automatic) clear temporary exchange
+![scheme map](docs/images_2/3_manual_clear.png)
