@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Example.Contracts;
 using MassTransit;
@@ -19,25 +20,20 @@ namespace Example.Producer
         {
             StartInfiniteMessagePublish().ConfigureAwait(false);
 
-            _messageBus = InitialState();
+            var isInitial = args.Length > 0 && args.Contains("--initial");
+            _step = isInitial ? 0 : 1;
+            _messageBus = isInitial ? InitialState() : FirstStep();
             _messageBus.Start();
-            Console.WriteLine("Initial state started. Press any key for move to next step");
+            Console.WriteLine(isInitial
+                ? "Initial state started. Press any key to finish"
+                : "First step started. Press any key to finish");
             Console.ReadLine();
             _messageBus.Stop();
+        }
 
-            _messageBus = FirstStep();
-            _messageBus.Start();
-            _step = 1;
-            Console.WriteLine("First step started. Press any key for move to next step");
-            Console.ReadLine();
-            _messageBus.Stop();
-
-            _messageBus = SecondStep();
-            _messageBus.Start();
-            _step = 2;
-            Console.WriteLine("Second step started. Press any key for move to next step");
-            Console.ReadLine();
-            _messageBus.Stop();
+        private static string GetTmpExchangeName(Type type)
+        {
+            return type.Namespace+":"+type.Name + "Tmp";
         }
 
         private static async Task StartInfiniteMessagePublish()
@@ -46,21 +42,15 @@ namespace Example.Producer
             {
                 if (_messageBus != null)
                 {
+                    Console.WriteLine($"Send message {DateTime.Now:s}");
                     foreach (var country in new[] {"ru", "by"})
                         try
                         {
-                            if (_step == 1)
-                                await _messageBus.Publish(new TestMessageTmp
-                                {
-                                    Country = country,
-                                    Message = $"foo {DateTime.Now:s}"
-                                });
-                            else
-                                await _messageBus.Publish(new TestMessage
-                                {
-                                    Country = country,
-                                    Message = $"foo {DateTime.Now:s}"
-                                });
+                            await _messageBus.Publish(new TestMessage
+                            {
+                                Country = country,
+                                Message = $"{_step} {DateTime.Now:s}"
+                            });
                         }
                         catch
                         {
@@ -68,7 +58,7 @@ namespace Example.Producer
                         }
                 }
 
-                await Task.Delay(TimeSpan.FromMilliseconds(150));
+                await Task.Delay(TimeSpan.FromMilliseconds(1000));
             }
         }
 
@@ -81,11 +71,18 @@ namespace Example.Producer
                     x.Username(Username);
                     x.Password(Password);
                 });
+                
+                cfg.Publish<TestMessage>(x =>
+                {
+                    x.ExchangeType = ExchangeType.Fanout;
+                });
             });
         }
 
         private static IBusControl FirstStep()
         {
+            var rabbitClient = new RabbitApiClient("http://localhost:15673", Username, Password);
+            rabbitClient.AddTmpTopicExchange<TestMessage>().Wait();
             return Bus.Factory.CreateUsingRabbitMq(cfg =>
             {
                 cfg.Host(new Uri(Host), x =>
@@ -94,25 +91,19 @@ namespace Example.Producer
                     x.Password(Password);
                 });
 
-                // configure send topology with country routing key and topic exchange
-                cfg.Send<TestMessageTmp>(x => { x.UseRoutingKeyFormatter(context => context.Message.Country); });
-                cfg.Publish<TestMessageTmp>(x => { x.ExchangeType = ExchangeType.Topic; });
-            });
-        }
-
-        private static IBusControl SecondStep()
-        {
-            return Bus.Factory.CreateUsingRabbitMq(cfg =>
-            {
-                cfg.Host(new Uri(Host), x =>
+                cfg.Message<TestMessage>(x =>
                 {
-                    x.Username(Username);
-                    x.Password(Password);
+                    x.SetEntityName(GetTmpExchangeName(typeof(TestMessage)));
                 });
-
                 // configure send topology with country routing key and topic exchange
-                cfg.Send<TestMessage>(x => { x.UseRoutingKeyFormatter(context => context.Message.Country); });
-                cfg.Publish<TestMessage>(x => { x.ExchangeType = ExchangeType.Topic; });
+                cfg.Send<TestMessage>(x =>
+                {
+                    x.UseRoutingKeyFormatter(context => context.Message.Country);
+                });
+                cfg.Publish<TestMessage>(x =>
+                {
+                    x.ExchangeType = ExchangeType.Topic;
+                });
             });
         }
     }
@@ -124,9 +115,5 @@ namespace Example.Contracts
     {
         public string Country { get; set; }
         public string Message { get; set; }
-    }
-
-    public class TestMessageTmp : TestMessage
-    {
     }
 }

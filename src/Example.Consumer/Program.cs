@@ -341,7 +341,7 @@ namespace Example.Consumer
 
         public Task Consume(ConsumeContext<TestMessage> context)
         {
-            //Console.WriteLine($"{_name} received message \"{context.Message.Message}\"");
+            Console.WriteLine($"{_name} received message \"{context.Message.Message}\"");
             return Task.CompletedTask;
         }
     }
