@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Example.Contracts;
@@ -20,13 +21,36 @@ namespace Example.Producer
         {
             StartInfiniteMessagePublish().ConfigureAwait(false);
 
-            var isInitial = args.Length > 0 && args.Contains("--initial");
-            _step = isInitial ? 0 : 1;
-            _messageBus = isInitial ? InitialState() : FirstStep();
+            if (args.Length == 0)
+            {
+                _step = 1;
+            }
+            else if (args.Contains("--initial"))
+            {
+                _step = 0;
+            }
+            else if (args.Contains("--second"))
+            {
+                _step = 2;
+            }
+
+            _messageBus = _step switch
+            {
+                0 => InitialState(),
+                1 => FirstStep(),
+                2 => SecondStep(),
+                _ => throw new InvalidEnumArgumentException()
+            };
             _messageBus.Start();
-            Console.WriteLine(isInitial
-                ? "Initial state started. Press any key to finish"
-                : "First step started. Press any key to finish");
+            switch (_step)
+            {
+                case 0: Console.WriteLine("Initial state started. Press any key to finish");
+                    break;
+                case 1: Console.WriteLine("First step started. Press any key to finish");
+                    break;
+                case 2: Console.WriteLine("Second step started. Press any key to finish");
+                    break;
+            }
             Console.ReadLine();
             _messageBus.Stop();
         }
@@ -42,14 +66,14 @@ namespace Example.Producer
             {
                 if (_messageBus != null)
                 {
-                    Console.WriteLine($"Send message {DateTime.Now:s}");
+                    Console.WriteLine($"Send message {_step} {DateTime.Now:s}");
                     foreach (var country in new[] {"ru", "by"})
                         try
                         {
                             await _messageBus.Publish(new TestMessage
                             {
                                 Country = country,
-                                Message = $"{_step} {DateTime.Now:s}"
+                                Message = $"{_step} country: {country} {DateTime.Now:s}"
                             });
                         }
                         catch
@@ -95,6 +119,30 @@ namespace Example.Producer
                 {
                     x.SetEntityName(GetTmpExchangeName(typeof(TestMessage)));
                 });
+                // configure send topology with country routing key and topic exchange
+                cfg.Send<TestMessage>(x =>
+                {
+                    x.UseRoutingKeyFormatter(context => context.Message.Country);
+                });
+                cfg.Publish<TestMessage>(x =>
+                {
+                    x.ExchangeType = ExchangeType.Topic;
+                });
+            });
+        }
+
+        private static IBusControl SecondStep()
+        {
+            var rabbitClient = new RabbitApiClient("http://localhost:15673", Username, Password);
+            rabbitClient.RecreateExchange<TestMessage>().Wait();
+            return Bus.Factory.CreateUsingRabbitMq(cfg =>
+            {
+                cfg.Host(new Uri(Host), x =>
+                {
+                    x.Username(Username);
+                    x.Password(Password);
+                });
+                
                 // configure send topology with country routing key and topic exchange
                 cfg.Send<TestMessage>(x =>
                 {

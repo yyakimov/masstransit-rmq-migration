@@ -30,6 +30,15 @@ namespace Example.Producer
             await CreateBinding(exchangeName, tmpExchangeName);
         }
 
+        public async Task RecreateExchange<T>()
+        {
+            var exchangeName = GetExchangeName(typeof(T));
+            var tmpExchangeName = exchangeName + "Tmp";
+            await _client.DeleteAsync($"/api/exchanges/{_vhost}/{exchangeName}");
+            await CreateTopicExchange(exchangeName);
+            await CreateDuplicateBindings(tmpExchangeName, exchangeName);
+        }
+
         private async Task CreateBinding(string exchangeName, string tmpExchangeName)
         {
             var content =
@@ -42,10 +51,11 @@ namespace Example.Producer
             await _client.PostAsync($"/api/bindings/{_vhost}/e/{exchangeName}/e/{tmpExchangeName}", contentStr);
         }
 
-        private async Task CreateDuplicateBindings(string exchangeName, string tmpExchangeName)
+        private async Task CreateDuplicateBindings(string fstExchangeName, string sndExchangeName)
         {
+            Console.WriteLine($"Create duplicate bindings from {fstExchangeName} to {sndExchangeName}");
             var getBindings = await _client
-                .GetAsync($"/api/exchanges/{_vhost}/{exchangeName}/bindings/source");
+                .GetAsync($"/api/exchanges/{_vhost}/{fstExchangeName}/bindings/source");
 
             if (getBindings.IsSuccessStatusCode)
             {
@@ -65,8 +75,12 @@ namespace Example.Producer
                     try
                     {
                         var response = await _client.PostAsync(
-                            $"/api/bindings/{_vhost}/e/{tmpExchangeName}/e/{binding.Destination}",
+                            $"/api/bindings/{_vhost}/e/{sndExchangeName}/e/{binding.Destination}",
                             contentStr);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            Console.WriteLine(response.ReasonPhrase);
+                        }
                     }
                     catch (Exception ex)
                     {
